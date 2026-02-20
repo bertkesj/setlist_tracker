@@ -1,5 +1,5 @@
 {
-  "name": "setlist-tracker",
+  "name": "setlist_tracker",
   "appMode": "shiny",
   "primaryFile": "app.R",
   "title": "Spotify Song Tracker",
