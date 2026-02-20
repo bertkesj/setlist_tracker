@@ -1,0 +1,10 @@
+{
+  "name": "spotify-song-tracker",
+  "appMode": "shiny",
+  "primaryFile": "app.R",
+  "title": "Spotify Song Tracker",
+  "author": "Your Name",
+  "description": "Shiny app with Spotify-style song tracker and SQLite persistence",
+  "rVersion": "4.3.1",
+  "packages": ["shiny", "DBI", "RSQLite"]
+}
