@@ -6,9 +6,5 @@
   "author": "Stephen Bertke",
   "description": "Shiny app with Spotify-style song tracker and SQLite persistence",
   "rVersion": "4.3.1",
-  "packages": [
-    "shiny",
-    "DBI",
-    "RSQLite"
-  ]
+  "packages": ["shiny", "DBI", "RSQLite"]
 }
