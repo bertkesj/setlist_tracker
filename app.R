@@ -74,7 +74,7 @@ ui <- fluidPage(
     "))
   ),
   
-  h3("Spotify Song Tracker"),
+  h3("Set List"),
   
   # Input for adding new songs
   div(class = "input-row",
@@ -145,3 +145,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
