@@ -1,58 +1,82 @@
 library(shiny)
 library(DBI)
-library(RSQLite)
+library(RPostgres)
 
-DB_FILE <- "songs.sqlite"
+# Connect helper
+con <- dbConnect(
+  RPostgres::Postgres(),
+  host = 'ep-divine-sunset-ai4cvzw0-pooler.c-4.us-east-1.aws.neon.tech',
+  dbname = 'neondb',
+  user = 'neondb_owner',
+  password = 'npg_ngHOAKX7o9Bq',
+  sslmode = "require"
+)
 
-# Initialize DB if it doesn't exist
+
+# Initialize table
 initDB <- function() {
-  con <- dbConnect(SQLite(), DB_FILE)
-  if (!dbExistsTable(con, "songs")) {
+  #con <- get_con()
+  
+  dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS songs (
+      id SERIAL PRIMARY KEY,
+      song TEXT NOT NULL,
+      bpm INTEGER NOT NULL,
+      lastplayed DATE
+    )
+  ")
+  
+  # Seed only if empty
+  count <- dbGetQuery(con, "SELECT COUNT(*) FROM songs")[1,1]
+  if (count == 0) {
     dbExecute(con, "
-      CREATE TABLE songs (
-        id INTEGER PRIMARY KEY,
-        Song TEXT,
-        BPM INTEGER,
-        LastPlayed DATE
-      )
-    ")
-    dbExecute(con, "
-      INSERT INTO songs (Song, BPM, LastPlayed) VALUES
-      ('Let It Be', 72, NULL),
-      ('Bohemian Rhapsody', 144, NULL),
-      ('Hotel California', 75, NULL),
-      ('Smells Like Teen Spirit', 117, NULL),
-      ('Billie Jean', 117, NULL)
+      INSERT INTO songs (song, bpm)
+      VALUES
+      ('Let It Be', 72),
+      ('Bohemian Rhapsody', 144),
+      ('Hotel California', 75),
+      ('Smells Like Teen Spirit', 117),
+      ('Billie Jean', 117)
     ")
   }
-  dbDisconnect(con)
+  
+  #dbDisconnect(con)
 }
 
-# Load all songs
+# Load alphabetically
 loadSongs <- function() {
-  con <- dbConnect(SQLite(), DB_FILE)
-  df <- dbGetQuery(con, "SELECT * FROM songs ORDER BY id")
-  dbDisconnect(con)
-  df$LastPlayed <- as.Date(df$LastPlayed)
+  #con <- get_con()
+  df <- dbGetQuery(con, "
+    SELECT * FROM songs
+    ORDER BY LOWER(song) ASC
+  ")
+  #dbDisconnect(con)
+  df$lastplayed <- as.Date(df$lastplayed)
   df
 }
 
-# Update LastPlayed
-updateLastPlayed <- function(id) {
-  con <- dbConnect(SQLite(), DB_FILE)
+updateLastPlayed <- function(song) {
+  #con <- get_con()
+  
   dbExecute(con,
-            "UPDATE songs SET LastPlayed = ? WHERE id = ?",
-            params = list(Sys.Date(), id))
-  dbDisconnect(con)
+            "UPDATE songs
+     SET lastplayed = CURRENT_DATE
+     WHERE song = $1",
+            params = list(song))
+  
+  #dbDisconnect(con)
 }
 
-# Add a new song
-addSong <- function(name, bpm) {
-  con <- dbConnect(SQLite(), DB_FILE)
+addSong <- function(song, bpm) {
+  #con <- get_con()
+  
   dbExecute(con,
-            "INSERT INTO songs (Song, BPM, LastPlayed) VALUES (?, ?, NULL)",
-            params = list(name, bpm))
-  dbDisconnect(con)
+            "INSERT INTO songs (song, bpm)
+     VALUES ($1, $2)
+     ON CONFLICT (song) DO NOTHING",
+            params = list(song, bpm))
+  
+  #dbDisconnect(con)
 }
 
 initDB()
@@ -67,30 +91,30 @@ ui <- fluidPage(
       .date { flex: 2; text-align: center; }
       .play-btn { flex: 1; background-color: #1DB954; border: none; color: white; border-radius: 20px; padding: 6px; cursor: pointer; }
       .play-btn:hover { background-color: #1ed760; }
-      .input-row { display: flex; margin-bottom: 10px; align-items: center; }
-      .input-row input { margin-right: 10px; padding: 5px; border-radius: 5px; border: none; width: 150px; }
+      .add-section { margin-top: 25px; padding-top: 15px; border-top: 1px solid #333; }
+      .add-section input { margin-right: 10px; padding: 5px; border-radius: 5px; border: none; }
       .add-btn { background-color: #1DB954; color: white; border: none; padding: 6px 12px; border-radius: 20px; cursor: pointer; }
       .add-btn:hover { background-color: #1ed760; }
     "))
   ),
   
-  h3("Set List"),
+  h3("Spotify Song Tracker"),
   
-  # Input for adding new songs
-  div(class = "input-row",
-      textInput("new_song", "Song Name", ""),
-      numericInput("new_bpm", "BPM", value = 120, min = 30, max = 300),
+  uiOutput("songs"),
+  
+  # ⬇️ Add Song section moved to bottom
+  div(class = "add-section",
+      h4("Add Song"),
+      textInput("new_song", NULL, placeholder = "Song name"),
+      numericInput("new_bpm", NULL, value = 120, min = 30, max = 300),
       actionButton("add_song_btn", "Add Song", class = "add-btn")
-  ),
-  
-  uiOutput("songs")
+  )
 )
 
 server <- function(input, output, session) {
   
   rv <- reactiveValues(data = loadSongs())
   
-  # Color gradient function
   getColor <- function(date, all_dates) {
     if (is.na(date)) return("#777777")
     valid <- all_dates[!is.na(all_dates)]
@@ -105,35 +129,44 @@ server <- function(input, output, session) {
     rgb(red, green, 80, maxColorValue = 255)
   }
   
-  # Render songs
   output$songs <- renderUI({
     rv$data <- loadSongs()
+    
     lapply(seq_len(nrow(rv$data)), function(i) {
       row <- rv$data[i,]
-      color <- getColor(row$LastPlayed, rv$data$LastPlayed)
+      color <- getColor(row$lastplayed, rv$data$lastplayed)
+      
       div(class = "song-row",
-          div(class = "song-name", row$Song),
-          div(class = "bpm", row$BPM),
+          div(class = "song-name", row$song),
+          div(class = "bpm", row$bpm),
           div(class = "date",
               style = paste0("color:", color),
-              ifelse(is.na(row$LastPlayed), "Never", as.character(row$LastPlayed))
+              ifelse(is.na(row$lastplayed),
+                     "Never",
+                     as.character(row$lastplayed))
           ),
-          actionButton(paste0("btn_", row$id), "Played Today", class = "play-btn")
+          actionButton(
+            paste0("btn_", gsub("[^A-Za-z0-9]", "_", row$song)),
+            "Played Today",
+            class = "play-btn"
+          )
       )
     })
   })
   
-  # Observe Played Today buttons
   observe({
-    lapply(rv$data$id, function(id) {
-      observeEvent(input[[paste0("btn_", id)]], {
-        updateLastPlayed(id)
+    lapply(rv$data$song, function(song) {
+      
+      id <- paste0("btn_", gsub("[^A-Za-z0-9]", "_", song))
+      
+      observeEvent(input[[id]], {
+        updateLastPlayed(song)
         rv$data <- loadSongs()
       }, ignoreInit = TRUE)
+      
     })
   })
   
-  # Observe Add Song button
   observeEvent(input$add_song_btn, {
     req(input$new_song)
     req(input$new_bpm)
@@ -145,4 +178,3 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-
